@@ -1,5 +1,5 @@
 import { Redis, RedisOptions } from 'ioredis';
-import { getConfig } from '../../config/env.js';
+import { getConfig, Config } from '../../config/env.js';
 
 let redisInstance: Redis | null = null;
 
@@ -10,11 +10,7 @@ export function parseRedisAddr(addr: string): { host: string; port: number } {
   return { host, port };
 }
 
-export async function createRedisClient(configOverride?: {
-  addr: string;
-  user?: string;
-  pass?: string;
-}): Promise<Redis> {
+export async function createRedisClient(configOverride?: Config['redis']): Promise<Redis> {
   const redisConfig = configOverride || getConfig().redis;
   const { host, port } = parseRedisAddr(redisConfig.addr);
 
@@ -40,9 +36,9 @@ export async function createRedisClient(configOverride?: {
   return client;
 }
 
-export function getRedisClientSync(): Redis {
+export function getRedisClientSync(configOverride?: Config['redis']): Redis {
   if (!redisInstance) {
-    const redisConfig = getConfig().redis;
+    const redisConfig = configOverride || getConfig().redis;
     const { host, port } = parseRedisAddr(redisConfig.addr);
     redisInstance = new Redis({
       host,
@@ -50,14 +46,22 @@ export function getRedisClientSync(): Redis {
       username: redisConfig.user || undefined,
       password: redisConfig.pass || undefined,
       maxRetriesPerRequest: 3,
+      lazyConnect: false,
     });
   }
   return redisInstance;
 }
 
-export async function getRedisClient(): Promise<Redis> {
+export async function getRedisClient(configOverride?: Config['redis']): Promise<Redis> {
   if (!redisInstance) {
-    redisInstance = await createRedisClient();
+    redisInstance = await createRedisClient(configOverride);
   }
   return redisInstance;
+}
+
+export async function disconnectRedis(): Promise<void> {
+  if (redisInstance) {
+    await redisInstance.quit().catch(() => redisInstance?.disconnect());
+    redisInstance = null;
+  }
 }

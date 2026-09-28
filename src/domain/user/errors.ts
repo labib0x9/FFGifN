@@ -1,4 +1,6 @@
-import { DomainError } from '../auth/errors.js';
+import { DomainError } from '../shared/errors.js';
+
+export { DomainError };
 
 export class QuotaExceededError extends DomainError {
   constructor(message = 'storage quota exceeded') {

@@ -1,6 +1,7 @@
 import { PrismaClient, Prisma } from '@prisma/client';
-import { ProfileRepository } from '../../domain/user/repository.js';
-import { Profile } from '../../domain/user/entity.js';
+import type { ProfileRepository } from '../../domain/user/repository.js';
+import type { Profile } from '../../domain/user/entity.js';
+import { PreconditionFailedError } from '../../domain/user/errors.js';
 
 export class PostgresProfileRepository implements ProfileRepository {
   constructor(private readonly prisma: PrismaClient | Prisma.TransactionClient) {}
@@ -22,7 +23,28 @@ export class PostgresProfileRepository implements ProfileRepository {
     return record;
   }
 
-  async updateProfile(userId: string, profilePic: string, _expectedUpdatedAt?: Date): Promise<Profile> {
+  async updateProfile(userId: string, profilePic: string, expectedUpdatedAt?: Date): Promise<Profile> {
+    if (expectedUpdatedAt) {
+      const result = await this.prisma.profile.updateMany({
+        where: {
+          userId,
+          updatedAt: expectedUpdatedAt,
+        },
+        data: {
+          profilePic,
+        },
+      });
+
+      if (result.count === 0) {
+        throw new PreconditionFailedError();
+      }
+
+      const updated = await this.prisma.profile.findUnique({
+        where: { userId },
+      });
+      return updated!;
+    }
+
     const record = await this.prisma.profile.upsert({
       where: { userId },
       update: { profilePic },

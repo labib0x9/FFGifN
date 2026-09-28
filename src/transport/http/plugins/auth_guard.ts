@@ -36,7 +36,10 @@ const authGuardPlugin: FastifyPluginAsync = async (fastify: FastifyInstance) => 
 
     let decoded: JwtPayload;
     try {
-      decoded = fastify.jwt.verify<JwtPayload>(token);
+      decoded = fastify.jwt.verify<JwtPayload>(token, {
+        allowedIss: 'ffgif',
+        algorithms: ['HS256'],
+      });
     } catch (err: any) {
       const isExpired = err.message?.includes('expired') || err.code === 'FAST_JWT_EXPIRED';
       reply.header(
@@ -45,12 +48,12 @@ const authGuardPlugin: FastifyPluginAsync = async (fastify: FastifyInstance) => 
       );
       return reply.status(401).send({
         error_code: 'AUTH_INVALID_CREDENTIALS',
-        message: 'invalid token',
+        message: isExpired ? 'token expired' : 'invalid token',
         status: 401,
       });
     }
 
-    // Check Redis token blocklist
+    // Check Redis token blocklist (Fail closed on Redis errors)
     try {
       const redis = getRedisClientSync();
       const isBlocklisted = await redis.get(`token_blocklist:${token}`);
@@ -66,17 +69,17 @@ const authGuardPlugin: FastifyPluginAsync = async (fastify: FastifyInstance) => 
         });
       }
     } catch (err: any) {
-      if (err.message && err.message.includes('blocklist')) {
-        reply.header(
-          'WWW-Authenticate',
-          'Bearer realm="ffgif", error="invalid_token", error_description="unable to verify token status"'
-        );
-        return reply.status(401).send({
-          error_code: 'AUTH_INVALID_CREDENTIALS',
-          message: 'unable to verify token status',
-          status: 401,
-        });
-      }
+      // Fail closed: Do NOT allow access when token revocation cannot be verified
+      request.log.error(err, '[authGuard] Redis blocklist check failed, failing closed');
+      reply.header(
+        'WWW-Authenticate',
+        'Bearer realm="ffgif", error="invalid_token", error_description="unable to verify token status"'
+      );
+      return reply.status(401).send({
+        error_code: 'AUTH_INVALID_CREDENTIALS',
+        message: 'unable to verify token status',
+        status: 401,
+      });
     }
 
     request.authUser = decoded;

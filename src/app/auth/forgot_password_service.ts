@@ -1,38 +1,31 @@
-import { AuthRepository, ReseterRepository } from '../../domain/auth/repository.js';
-import { UserNotFoundError, UserNotVerifiedError, CreateResetTokenFailedError } from '../../domain/auth/errors.js';
+import type { AuthRepository, ReseterRepository } from '../../domain/auth/repository.js';
 import { generateToken } from './token_util.js';
-import { RabbitMQClient } from '../../infra/rabbitmq/client.js';
+import type { EmailPublisher } from '../ports/email_publisher.js';
 
 export class ForgotPasswordService {
   constructor(
     private readonly authRepo: AuthRepository,
     private readonly reseterRepo: ReseterRepository,
-    private readonly rabbitmq: RabbitMQClient
+    private readonly emailPublisher: EmailPublisher
   ) {}
 
   async execute(email: string): Promise<void> {
     const user = await this.authRepo.getByEmail(email);
-    if (!user) {
-      throw new UserNotFoundError();
-    }
-
-    if (!user.isVerified) {
-      throw new UserNotVerifiedError();
+    // Silently return for unknown, deleted, or unverified emails to prevent user enumeration
+    if (!user || !user.isVerified || user.deletedAt) {
+      return;
     }
 
     const { token, tokenHash } = generateToken();
 
-    const created = await this.reseterRepo.create({
+    await this.reseterRepo.create({
       userId: user.id,
       tokenHash,
+      expireAt: new Date(Date.now() + 15 * 60 * 1000),
     });
 
-    if (!created) {
-      throw new CreateResetTokenFailedError();
-    }
-
     try {
-      await this.rabbitmq.publishEmail({
+      await this.emailPublisher.publishEmail({
         to: user.email,
         name: 'forgot-password',
         token,

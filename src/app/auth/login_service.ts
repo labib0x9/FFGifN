@@ -1,5 +1,5 @@
-import { AuthRepository } from '../../domain/auth/repository.js';
-import { User } from '../../domain/auth/entity.js';
+import type { AuthRepository } from '../../domain/auth/repository.js';
+import type { User } from '../../domain/auth/entity.js';
 import { InvalidCredentialError, UserNotVerifiedError } from '../../domain/auth/errors.js';
 import { PasswordHasher } from './password_hasher.js';
 
@@ -20,17 +20,23 @@ export class LoginService {
 
   async execute(input: LoginInput): Promise<LoginResult> {
     const user = await this.authRepo.getByEmail(input.email);
-    if (!user) {
-      throw new InvalidCredentialError();
-    }
 
-    if (!user.isVerified) {
-      throw new UserNotVerifiedError();
+    if (!user) {
+      await this.hasher.dummyCompare(input.password);
+      throw new InvalidCredentialError();
     }
 
     const isMatch = await this.hasher.compare(input.password, user.passwordHash);
     if (!isMatch) {
       throw new InvalidCredentialError();
+    }
+
+    if (user.deletedAt) {
+      throw new InvalidCredentialError();
+    }
+
+    if (!user.isVerified) {
+      throw new UserNotVerifiedError();
     }
 
     return { user };

@@ -1,16 +1,8 @@
 import amqplib from 'amqplib';
-import { RabbitMQClient, EmailMessage } from '../infra/rabbitmq/client.js';
+import { RabbitMQClient } from '../infra/rabbitmq/client.js';
 import { QUEUES } from '../infra/rabbitmq/constants.js';
 import { EmailSender } from '../infra/mailer/smtp.js';
-
-export function getRetryCount(headers?: Record<string, any>): number {
-  if (!headers || !headers['x-death']) return 0;
-  const death = headers['x-death'];
-  if (Array.isArray(death) && death.length > 0) {
-    return Number(death[0]?.count || 0);
-  }
-  return 0;
-}
+import type { EmailMessage } from '../app/ports/email_publisher.js';
 
 export class EmailWorker {
   private readonly maxRetries = 3;
@@ -37,7 +29,7 @@ export class EmailWorker {
       return;
     }
 
-    console.log(`[EmailWorker] Processing email type=${msg.name} to=${msg.to}`);
+    console.log(`[EmailWorker] Processing email type=${msg.name} to=${msg.to} (retries=${msg.retries || 0})`);
 
     try {
       switch (msg.name) {
@@ -65,11 +57,22 @@ export class EmailWorker {
       ch.ack(d, false);
       console.log(`[EmailWorker] Email processed successfully to=${msg.to}`);
     } catch (err) {
-      console.error(`[EmailWorker] Email sending failed:`, err);
-      const retries = getRetryCount(d.properties.headers);
-      if (retries < this.maxRetries) {
-        ch.nack(d, false, true);
+      console.error(`[EmailWorker] Email sending failed to=${msg.to}:`, err);
+      const currentRetries = (msg.retries || 0) + 1;
+      if (currentRetries <= this.maxRetries) {
+        console.warn(`[EmailWorker] Scheduling retry #${currentRetries} via retry queue for ${msg.to}`);
+        try {
+          await this.rabbitmq.publishRetryEmail({
+            ...msg,
+            retries: currentRetries,
+          });
+          ch.ack(d, false);
+        } catch (pubErr) {
+          console.error('[EmailWorker] Failed to publish retry message:', pubErr);
+          ch.nack(d, false, false);
+        }
       } else {
+        console.error(`[EmailWorker] Max retries (${this.maxRetries}) exceeded for email to=${msg.to}, sending to dead letter queue`);
         ch.nack(d, false, false);
       }
     }

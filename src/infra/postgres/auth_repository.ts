@@ -1,6 +1,6 @@
 import { PrismaClient, Prisma } from '@prisma/client';
 import type { AuthRepository } from '../../domain/auth/repository.js';
-import type { User } from '../../domain/auth/entity.js';
+import type { User, Role } from '../../domain/auth/entity.js';
 
 export class PostgresAuthRepository implements AuthRepository {
   constructor(private readonly prisma: PrismaClient | Prisma.TransactionClient) {}
@@ -52,13 +52,14 @@ export class PostgresAuthRepository implements AuthRepository {
     isVerified?: boolean;
     deletedAt?: Date | null;
   }): Promise<User> {
+    const roleValue = (user.role as Role) || 'user';
     const record = await this.prisma.user.create({
       data: {
         username: user.username,
         fullname: user.fullname || '',
         email: user.email,
         passwordHash: user.passwordHash,
-        role: user.role || 'user',
+        role: roleValue,
         isVerified: user.isVerified ?? false,
         deletedAt: user.deletedAt,
       },
@@ -111,7 +112,7 @@ export class PostgresAuthRepository implements AuthRepository {
         fullname: user.fullname,
         email: user.email,
         passwordHash: user.passwordHash,
-        role: user.role,
+        role: user.role ? (user.role as Role) : undefined,
         isVerified: user.isVerified,
         deletedAt: user.deletedAt,
       },

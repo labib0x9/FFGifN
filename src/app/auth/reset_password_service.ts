@@ -1,22 +1,21 @@
-import { Prisma, PrismaClient } from '@prisma/client';
 import { getTokenHash } from './token_util.js';
 import { PasswordHasher } from './password_hasher.js';
-import { PostgresReseterRepository } from '../../infra/postgres/reseter_repository.js';
-import { PostgresAuthRepository } from '../../infra/postgres/auth_repository.js';
 import { ResetTokenFetchFailedError, UserNotFoundError } from '../../domain/auth/errors.js';
-import { RabbitMQClient } from '../../infra/rabbitmq/client.js';
+import type { ReseterRepository } from '../../domain/auth/repository.js';
+import type { UnitOfWork } from '../ports/unit_of_work.js';
+import type { EmailPublisher } from '../ports/email_publisher.js';
 
 export class ResetPasswordService {
   constructor(
-    private readonly prisma: PrismaClient,
-    private readonly rabbitmq: RabbitMQClient,
+    private readonly unitOfWork: UnitOfWork,
+    private readonly reseterRepo: ReseterRepository,
+    private readonly emailPublisher: EmailPublisher,
     private readonly hasher: PasswordHasher
   ) {}
 
   async getResetToken(token: string): Promise<string> {
     const tokenHash = getTokenHash(token);
-    const reseterRepo = new PostgresReseterRepository(this.prisma);
-    const reseter = await reseterRepo.getByToken(tokenHash);
+    const reseter = await this.reseterRepo.getByToken(tokenHash);
     if (!reseter) {
       throw new ResetTokenFetchFailedError();
     }
@@ -33,28 +32,25 @@ export class ResetPasswordService {
 
     let userEmail = '';
 
-    await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      const reseterRepo = new PostgresReseterRepository(tx);
-      const authRepo = new PostgresAuthRepository(tx);
-
-      const oldToken = await reseterRepo.getByToken(tokenHash);
+    await this.unitOfWork.run(async (tx) => {
+      const oldToken = await tx.reseterRepo.getByToken(tokenHash);
       if (!oldToken) {
         throw new ResetTokenFetchFailedError();
       }
 
-      const user = await authRepo.getById(oldToken.userId);
+      const user = await tx.authRepo.getById(oldToken.userId);
       if (!user) {
         throw new UserNotFoundError();
       }
 
       userEmail = user.email;
 
-      await authRepo.updatePassword(user.id, passHash);
-      await reseterRepo.deleteById(oldToken.id);
+      await tx.authRepo.updatePassword(user.id, passHash);
+      await tx.reseterRepo.deleteById(oldToken.id);
     });
 
     try {
-      await this.rabbitmq.publishEmail({
+      await this.emailPublisher.publishEmail({
         to: userEmail,
         name: 'reset-password',
         token: '',

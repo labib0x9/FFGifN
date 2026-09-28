@@ -1,6 +1,7 @@
 import { PrismaClient, Prisma } from '@prisma/client';
-import { QuotaRepository } from '../../domain/user/repository.js';
-import { Quota } from '../../domain/user/entity.js';
+import type { QuotaRepository } from '../../domain/user/repository.js';
+import type { Quota } from '../../domain/user/entity.js';
+import { QuotaExceededError } from '../../domain/user/errors.js';
 
 export class PostgresQuotaRepository implements QuotaRepository {
   constructor(private readonly prisma: PrismaClient | Prisma.TransactionClient) {}
@@ -32,22 +33,25 @@ export class PostgresQuotaRepository implements QuotaRepository {
   }
 
   async incrementGifCount(userId: string, addedBytes: bigint): Promise<void> {
-    await this.prisma.quota.update({
-      where: { userId },
-      data: {
-        usedBytes: { increment: addedBytes },
-        gifCount: { increment: 1 },
-      },
-    });
+    const affected = await this.prisma.$executeRaw`
+      UPDATE quota
+      SET used_bytes = used_bytes + ${addedBytes}, gif_count = gif_count + 1
+      WHERE user_id = ${userId}::uuid
+        AND (used_bytes + ${addedBytes} <= total_bytes)
+        AND (gif_count + 1 <= gif_limit)
+    `;
+
+    if (affected === 0) {
+      throw new QuotaExceededError();
+    }
   }
 
   async decrementGifCount(userId: string, freedBytes: bigint): Promise<void> {
-    await this.prisma.quota.update({
-      where: { userId },
-      data: {
-        usedBytes: { decrement: freedBytes },
-        gifCount: { decrement: 1 },
-      },
-    });
+    await this.prisma.$executeRaw`
+      UPDATE quota
+      SET used_bytes = CASE WHEN used_bytes >= ${freedBytes} THEN used_bytes - ${freedBytes} ELSE 0 END,
+          gif_count = CASE WHEN gif_count > 0 THEN gif_count - 1 ELSE 0 END
+      WHERE user_id = ${userId}::uuid
+    `;
   }
 }

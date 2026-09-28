@@ -1,5 +1,6 @@
 export const QUEUES = {
   EMAIL: 'email.queue',
+  EMAIL_RETRY: 'email.retry.queue',
   PROCESS: 'process.queue',
   SAVE: 'video.save.queue',
   SAVE_RETRY: 'save.retry.queue',

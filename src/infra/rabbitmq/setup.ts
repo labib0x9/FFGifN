@@ -8,7 +8,7 @@ export async function setupRabbitMQTopology(
 ): Promise<void> {
   const cnf = minioConfig || getConfig().minio;
 
-  // 1. Email Queue + Dead Queue
+  // 1. Email Queue + Retry Queue + Dead Queue
   await channel.assertQueue(getDeadQueue(QUEUES.EMAIL), {
     durable: true,
     autoDelete: false,
@@ -22,6 +22,23 @@ export async function setupRabbitMQTopology(
     arguments: {
       'x-dead-letter-exchange': '',
       'x-dead-letter-routing-key': getDeadQueue(QUEUES.EMAIL),
+    },
+  });
+
+  await channel.assertQueue(getDeadQueue(QUEUES.EMAIL_RETRY), {
+    durable: true,
+    autoDelete: false,
+    exclusive: false,
+  });
+
+  await channel.assertQueue(QUEUES.EMAIL_RETRY, {
+    durable: true,
+    autoDelete: false,
+    exclusive: false,
+    arguments: {
+      'x-message-ttl': 5000,
+      'x-dead-letter-exchange': '',
+      'x-dead-letter-routing-key': QUEUES.EMAIL,
     },
   });
 

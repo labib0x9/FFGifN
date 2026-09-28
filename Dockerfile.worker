@@ -8,7 +8,7 @@ COPY package*.json ./
 COPY prisma ./prisma/
 RUN npm ci
 
-COPY tsconfig.json ./
+COPY tsconfig*.json ./
 COPY src ./src/
 RUN npx prisma generate && npm run build
 
@@ -25,5 +25,7 @@ RUN npm ci --omit=dev
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+
+USER node
 
 CMD ["node", "dist/workers/index.js"]

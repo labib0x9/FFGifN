@@ -1,23 +1,19 @@
-import { getConfig } from '../config/env.js';
-import { getRabbitMQClient } from '../infra/rabbitmq/client.js';
-import { SmtpMailer } from '../infra/mailer/smtp.js';
+import { createContainer } from '../container.js';
 import { EmailWorker } from './email_worker.js';
 
 async function startWorkers() {
-  const cnf = getConfig();
+  const container = createContainer();
+  const cnf = container.config;
   console.log(`[Workers] Starting auth email worker in ${cnf.environment} mode...`);
 
-  const rabbitmq = getRabbitMQClient();
-  const mailer = new SmtpMailer();
-
-  const emailWorker = new EmailWorker(rabbitmq, mailer);
+  const emailWorker = new EmailWorker(container.rabbitmq, container.mailer);
   await emailWorker.run('email-worker', 10);
 
   console.log('[Workers] Email worker running');
 
   const shutdown = async () => {
     console.log('[Workers] Shutting down workers...');
-    await rabbitmq.close().catch(() => {});
+    await container.dispose();
     console.log('[Workers] Workers exited cleanly');
     process.exit(0);
   };

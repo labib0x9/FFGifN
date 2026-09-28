@@ -1,7 +1,6 @@
 import { z } from 'zod';
 
 const required = (name: string) => z.string().min(1, `${name} is required`);
-
 const port = (fallback: number) => z.coerce.number().int().min(1).max(65535).default(fallback);
 
 const envSchema = z.object({
@@ -9,9 +8,10 @@ const envSchema = z.object({
   SERVICE_NAME: required('SERVICE_NAME'),
   ADDR: z.string().default('0.0.0.0'),
   PORT: port(8080),
+  APP_BASE_URL: z.string().default('http://127.0.0.1:8080'),
 
-  JWT_SECRET: z.string().min(5, 'JWT_SECRET must be at least 5 chars'),
-  HASH_PEPPER: z.string().min(5, 'HASH_PEPPER must be at least 5 chars'),
+  JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 chars'),
+  HASH_PEPPER: z.string().min(32, 'HASH_PEPPER must be at least 32 chars'),
   BCRYPT_COST: z.coerce.number().int().min(4).max(31).default(12),
 
   PG_USER: required('PG_USER'),
@@ -29,8 +29,6 @@ const envSchema = z.object({
   REDIS_PASSWORD: z.string().default(''),
 
   EMAIL: required('EMAIL'),
-  MAILTRAP_USERNAME: required('MAILTRAP_USERNAME'),
-  MAILTRAP_PASSWORD: required('MAILTRAP_PASSWORD'),
 
   MINIO_ADDR: required('MINIO_ADDR'),
   MINIO_PUBLIC_ENDPOINT: required('MINIO_PUBLIC_ENDPOINT'),
@@ -48,6 +46,7 @@ const envSchema = z.object({
     .transform((v) => v === 'true'),
   MINIO_NOTIFY_EXCHANGE: required('MINIO_NOTIFY_EXCHANGE'),
   MINIO_API_CORS_ALLOW_ORIGIN: required('MINIO_API_CORS_ALLOW_ORIGIN'),
+  CORS_ORIGINS: z.string().default('http://0.0.0.0:8080,http://localhost:8080,http://127.0.0.1:8080'),
 
   RMQ_ADDR: required('RMQ_ADDR'),
   RMQ_USER: required('RMQ_USER'),
@@ -59,11 +58,10 @@ const envSchema = z.object({
   SMTP_PASS: required('SMTP_PASS'),
 
   ENVIRONMENT: z.string().default('development'),
-  WORKER_METRICS_PORT: port(8081),
 });
 
-export function loadEnv() {
-  const result = envSchema.safeParse(process.env);
+export function loadEnv(env: NodeJS.ProcessEnv = process.env) {
+  const result = envSchema.safeParse(env);
   if (!result.success) {
     const details = result.error.issues
       .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
@@ -78,16 +76,24 @@ export function loadEnv() {
     raw.DATABASE_URL ||
     `postgresql://${enc(raw.PG_USER)}:${enc(raw.PG_PASSWORD)}@${raw.PG_ADDRESS}:${raw.PG_PORT}/${raw.PG_NAME}?sslmode=${raw.PG_SSLMODE}`;
 
-  process.env.DATABASE_URL ??= databaseUrl;
+  const corsOrigins = raw.CORS_ORIGINS.split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const minioAllowedOrigins = raw.MINIO_API_CORS_ALLOW_ORIGIN.split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
 
   return {
     version: raw.VERSION,
     service: raw.SERVICE_NAME,
     addr: raw.ADDR,
     port: raw.PORT,
+    appBaseUrl: raw.APP_BASE_URL,
     jwtSecret: raw.JWT_SECRET,
     hashPepper: raw.HASH_PEPPER,
     bcryptCost: raw.BCRYPT_COST,
+    corsOrigins,
     postgres: {
       user: raw.PG_USER,
       pass: raw.PG_PASSWORD,
@@ -105,10 +111,6 @@ export function loadEnv() {
       pass: raw.REDIS_PASSWORD,
     },
     email: raw.EMAIL,
-    mailtrap: {
-      user: raw.MAILTRAP_USERNAME,
-      pass: raw.MAILTRAP_PASSWORD,
-    },
     minio: {
       endpoint: raw.MINIO_ADDR,
       publicEndpoint: raw.MINIO_PUBLIC_ENDPOINT,
@@ -122,9 +124,7 @@ export function loadEnv() {
       maxUploadBytes: raw.MINIO_MAX_UPLOAD_BYTES,
       secure: raw.MINIO_USE_TLS,
       exchangeQueue: raw.MINIO_NOTIFY_EXCHANGE,
-      allowedOrigins: raw.MINIO_API_CORS_ALLOW_ORIGIN.split(',')
-        .map((s) => s.trim())
-        .filter(Boolean),
+      allowedOrigins: minioAllowedOrigins,
     },
     rabbitmq: {
       addr: raw.RMQ_ADDR,
@@ -139,10 +139,23 @@ export function loadEnv() {
       pass: raw.SMTP_PASS,
     },
     environment: raw.ENVIRONMENT,
-    workerMetricsPort: raw.WORKER_METRICS_PORT,
   };
 }
 
 export type Config = ReturnType<typeof loadEnv>;
-export const config: Config = loadEnv();
-export const getConfig = (): Config => config;
+
+let cachedConfig: Config | null = null;
+
+export function getConfig(overrideEnv?: NodeJS.ProcessEnv): Config {
+  if (overrideEnv) {
+    return loadEnv(overrideEnv);
+  }
+  if (!cachedConfig) {
+    cachedConfig = loadEnv();
+  }
+  return cachedConfig;
+}
+
+export function resetConfigCache(): void {
+  cachedConfig = null;
+}

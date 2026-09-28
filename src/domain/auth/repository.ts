@@ -21,13 +21,15 @@ export interface AuthRepository {
 
 export interface VerifierRepository {
   create(verifier: { userId: string; tokenHash: string; expireAt?: Date }): Promise<Verifier>;
+  upsert(verifier: { userId: string; tokenHash: string; expireAt?: Date }): Promise<Verifier>;
   getByHash(tokenHash: string): Promise<Verifier | null>;
-  getById(userId: string): Promise<Verifier | null>;
+  getByUserId(userId: string): Promise<Verifier | null>;
   delete(id: number): Promise<void>;
+  deleteByUserId(userId: string): Promise<void>;
 }
 
 export interface ReseterRepository {
-  getById(userId: string): Promise<Reseter | null>;
+  getByUserId(userId: string): Promise<Reseter | null>;
   create(reseter: { userId: string; tokenHash: string; expireAt?: Date }): Promise<Reseter>;
   getByToken(tokenHash: string): Promise<Reseter | null>;
   deleteById(id: number): Promise<void>;

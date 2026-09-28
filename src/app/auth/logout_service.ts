@@ -1,4 +1,4 @@
-import { CacheRepository } from '../../infra/redis/cache.js';
+import type { CacheRepository } from '../../infra/redis/cache.js';
 
 export class LogoutService {
   constructor(private readonly cacheRepo: CacheRepository) {}

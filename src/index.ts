@@ -1,46 +1,38 @@
-import Fastify from 'fastify';
-import fastifyStatic from '@fastify/static';
-import path from 'node:path';
-
-// const port = Number(process.env.PORT);
-// const host = String(process.env.ADDR);
-
-// const app = Fastify({logger: true});
-// // app.get('/', async () => ({ok: true}) );
-
-// await app.register(fastifyStatic, {
-//   root: path.join(import.meta.dirname, '..', 'public'),
-//   prefix: '/',
-//   extensions: ['html'],
-// });
-
-// app.setNotFoundHandler((req, reply) => {
-//   if (req.url.startsWith('/api')) {
-//     return reply.code(404).send({ error: 'not found' });
-//   }
-//   return reply.code(404).type('text/html').sendFile('404.html');
-// });
-
-// try {
-//   await app.listen({ port, host });
-// } catch (err) {
-//   app.log.error(err);
-//   process.exit(1);
-// }
-
-
-import { getConfig } from './config/env.js';
+import { createContainer } from './container.js';
 import { newServer } from './transport/http/server.js';
 
-const cfg = getConfig();
-const srv = newServer(cfg);
+const container = createContainer();
+const cfg = container.config;
+const srv = newServer(container);
+
+let isShuttingDown = false;
+
+const shutdown = async (signal: string) => {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.log(`[HTTP] Received ${signal}, initiating graceful shutdown...`);
+
+  try {
+    await srv.close();
+    console.log('[HTTP] Fastify server closed');
+    await container.dispose();
+    console.log('[HTTP] Infrastructure connections closed cleanly');
+    process.exit(0);
+  } catch (err) {
+    console.error('[HTTP] Error during graceful shutdown:', err);
+    process.exit(1);
+  }
+};
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 try {
   const address = await srv.listen({
     port: cfg.port,
     host: cfg.addr,
   });
-  console.log(`[HTTP] Starting Server at ${address}`);
+  console.log(`[HTTP] Server listening at ${address}`);
 } catch (err) {
   srv.log.error(err);
   process.exit(1);

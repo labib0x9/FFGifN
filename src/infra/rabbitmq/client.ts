@@ -2,12 +2,9 @@ import amqplib from 'amqplib';
 import { QUEUES } from './constants.js';
 import { setupRabbitMQTopology } from './setup.js';
 import { getConfig, Config } from '../../config/env.js';
+import type { EmailPublisher, EmailMessage } from '../../app/ports/email_publisher.js';
 
-export interface EmailMessage {
-  to: string;
-  name: string;
-  token: string;
-}
+export type { EmailMessage };
 
 export interface VideoMessage {
   user_id: string;
@@ -28,54 +25,118 @@ export interface SaveVideoMessage {
   retries?: number;
 }
 
-export class RabbitMQClient {
+export class RabbitMQClient implements EmailPublisher {
   private connection: amqplib.ChannelModel | null = null;
+  private connectingPromise: Promise<amqplib.ChannelModel> | null = null;
+  private publishChannel: amqplib.ConfirmChannel | null = null;
   private consumerChannels: Map<string, amqplib.Channel> = new Map();
 
-  constructor(private readonly rmqConfig?: Config['rabbitmq']) {}
+  constructor(
+    private readonly rmqConfig?: Config['rabbitmq'],
+    private readonly minioConfig?: Config['minio']
+  ) {}
 
   async connect(): Promise<amqplib.ChannelModel> {
     if (this.connection) {
       return this.connection;
     }
 
-    const cnf = this.rmqConfig || getConfig().rabbitmq;
-    try {
-      this.connection = await amqplib.connect(cnf.url);
-      console.log('[RabbitMQ] Connection complete');
-
-      // Run topology setup
-      const setupChannel = await this.connection.createChannel();
-      try {
-        await setupRabbitMQTopology(setupChannel);
-      } finally {
-        await setupChannel.close();
-      }
-
-      return this.connection;
-    } catch (err) {
-      throw new Error(`[RabbitMQ Panic] Failed to connect to RabbitMQ at ${cnf.addr}: ${(err as Error).message}`);
+    if (this.connectingPromise) {
+      return this.connectingPromise;
     }
+
+    const cnf = this.rmqConfig || getConfig().rabbitmq;
+    const minioCnf = this.minioConfig || getConfig().minio;
+
+    this.connectingPromise = (async () => {
+      try {
+        const conn = await amqplib.connect(cnf.url);
+        this.connection = conn;
+
+        conn.on('error', (err) => {
+          console.error('[RabbitMQ] Connection error:', err);
+          this.handleDisconnect();
+        });
+
+        conn.on('close', () => {
+          console.warn('[RabbitMQ] Connection closed');
+          this.handleDisconnect();
+        });
+
+        console.log('[RabbitMQ] Connection complete');
+
+        // Run topology setup
+        const setupChannel = await conn.createChannel();
+        try {
+          await setupRabbitMQTopology(setupChannel, minioCnf);
+        } finally {
+          await setupChannel.close().catch(() => {});
+        }
+
+        // Initialize reusable confirm channel for publishing
+        this.publishChannel = await conn.createConfirmChannel();
+
+        return conn;
+      } catch (err) {
+        this.handleDisconnect();
+        throw new Error(`[RabbitMQ Panic] Failed to connect to RabbitMQ at ${cnf.addr}: ${(err as Error).message}`);
+      } finally {
+        this.connectingPromise = null;
+      }
+    })();
+
+    return this.connectingPromise;
+  }
+
+  private handleDisconnect(): void {
+    this.connection = null;
+    this.publishChannel = null;
+    this.consumerChannels.clear();
+  }
+
+  private async getPublishChannel(): Promise<amqplib.ConfirmChannel> {
+    await this.connect();
+    if (!this.publishChannel) {
+      if (!this.connection) {
+        await this.connect();
+      }
+      this.publishChannel = await this.connection!.createConfirmChannel();
+    }
+    return this.publishChannel;
   }
 
   async publish(queue: string, payload: unknown): Promise<void> {
-    const conn = await this.connect();
-    const ch = await conn.createChannel();
-    try {
-      const content = Buffer.from(JSON.stringify(payload));
-      ch.sendToQueue(queue, content, {
-        contentType: 'app/json',
-        persistent: true,
-        timestamp: Date.now(),
-      });
-      console.log(`[RabbitMQ] publish() message published to ${queue}`);
-    } finally {
-      await ch.close();
-    }
+    const ch = await this.getPublishChannel();
+    const content = Buffer.from(JSON.stringify(payload));
+
+    await new Promise<void>((resolve, reject) => {
+      ch.sendToQueue(
+        queue,
+        content,
+        {
+          contentType: 'application/json',
+          persistent: true,
+          timestamp: Date.now(),
+        },
+        (err) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve();
+          }
+        }
+      );
+    });
+
+    console.log(`[RabbitMQ] publish() message confirmed to ${queue}`);
   }
 
   async publishEmail(msg: EmailMessage): Promise<void> {
     return this.publish(QUEUES.EMAIL, msg);
+  }
+
+  async publishRetryEmail(msg: EmailMessage): Promise<void> {
+    return this.publish(QUEUES.EMAIL_RETRY, msg);
   }
 
   async publishVideo(msg: VideoMessage): Promise<void> {
@@ -109,7 +170,12 @@ export class RabbitMQClient {
         try {
           await onMessage(msg, ch);
         } catch (err) {
-          console.error(`[RabbitMQ] Error processing message on ${queue}:`, err);
+          console.error(`[RabbitMQ] Uncaught error in consumer on ${queue}:`, err);
+          try {
+            ch.nack(msg, false, false);
+          } catch (nackErr) {
+            console.error(`[RabbitMQ] Failed to nack message:`, nackErr);
+          }
         }
       },
       { noAck: false }
@@ -119,7 +185,7 @@ export class RabbitMQClient {
   async closeConsumerChannel(name: string): Promise<void> {
     const ch = this.consumerChannels.get(name);
     if (ch) {
-      await ch.close();
+      await ch.close().catch(() => {});
       this.consumerChannels.delete(name);
     }
   }
@@ -128,12 +194,27 @@ export class RabbitMQClient {
     for (const [, ch] of this.consumerChannels) {
       try {
         await ch.close();
-      } catch (_) {}
+      } catch {
+        // Ignore close errors during teardown
+      }
     }
     this.consumerChannels.clear();
 
+    if (this.publishChannel) {
+      try {
+        await this.publishChannel.close();
+      } catch {
+        // Ignore close errors during teardown
+      }
+      this.publishChannel = null;
+    }
+
     if (this.connection) {
-      await this.connection.close();
+      try {
+        await this.connection.close();
+      } catch {
+        // Ignore close errors during teardown
+      }
       this.connection = null;
     }
   }
@@ -141,9 +222,19 @@ export class RabbitMQClient {
 
 let rabbitMQInstance: RabbitMQClient | null = null;
 
-export function getRabbitMQClient(): RabbitMQClient {
+export function getRabbitMQClient(
+  rmqConfig?: Config['rabbitmq'],
+  minioConfig?: Config['minio']
+): RabbitMQClient {
   if (!rabbitMQInstance) {
-    rabbitMQInstance = new RabbitMQClient();
+    rabbitMQInstance = new RabbitMQClient(rmqConfig, minioConfig);
   }
   return rabbitMQInstance;
+}
+
+export async function disconnectRabbitMQ(): Promise<void> {
+  if (rabbitMQInstance) {
+    await rabbitMQInstance.close().catch(() => {});
+    rabbitMQInstance = null;
+  }
 }

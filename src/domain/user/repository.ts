@@ -8,7 +8,13 @@ export interface ProfileRepository {
 }
 
 export interface QuotaRepository {
-  create(quota: { userId: string; usedBytes?: bigint; totalBytes?: bigint; gifCount?: number; gifLimit?: number }): Promise<Quota>;
+  create(quota: {
+    userId: string;
+    usedBytes?: bigint;
+    totalBytes?: bigint;
+    gifCount?: number;
+    gifLimit?: number;
+  }): Promise<Quota>;
   getQuota(userId: string): Promise<Quota | null>;
   incrementGifCount(userId: string, addedBytes: bigint): Promise<void>;
   decrementGifCount(userId: string, freedBytes: bigint): Promise<void>;
@@ -17,7 +23,7 @@ export interface QuotaRepository {
 export interface UserRepository {
   getById(id: string): Promise<User | null>;
   getByEmail(email: string): Promise<User | null>;
-  updateProfile(userId: string, fullname: string, expectedUpdatedAt: Date): Promise<User>;
+  updateProfile(userId: string, fullname: string, expectedUpdatedAt?: Date): Promise<User>;
   deleteUser(userId: string): Promise<void>;
   changePassword(userId: string, passwordHash: string): Promise<void>;
 }

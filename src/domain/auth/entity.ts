@@ -1,3 +1,5 @@
+export type Role = 'user' | 'admin' | 'anon';
+
 export interface User {
   id: string;
   username: string;
@@ -5,7 +7,7 @@ export interface User {
   email: string;
   passwordHash: string;
   isVerified: boolean;
-  role: string;
+  role: Role | string;
   createdAt: Date;
   updatedAt: Date;
   deletedAt?: Date | null;
@@ -23,7 +25,6 @@ export interface Reseter {
   id: number;
   userId: string;
   tokenHash: string;
-  used: boolean;
   createdAt: Date;
   expireAt: Date;
 }

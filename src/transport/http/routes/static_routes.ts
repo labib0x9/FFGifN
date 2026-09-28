@@ -15,11 +15,10 @@ const PAGES: Array<[RegExp, string]> = [
 
 // fp() keeps the hook and reply.sendFile global instead of scoped to this plugin.
 // Register this BEFORE the API routes.
-// /login -> login.html
 export const staticRoutes = fp(async (app) => {
   await app.register(fastifyStatic, {
     root: path.resolve(process.cwd(), 'public'),
-    extensions: ['html'], 
+    extensions: ['html'],
   });
 
   app.addHook('onRequest', async (req, reply) => {

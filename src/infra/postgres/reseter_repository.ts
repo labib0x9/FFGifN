@@ -1,11 +1,11 @@
 import { PrismaClient, Prisma } from '@prisma/client';
-import { ReseterRepository } from '../../domain/auth/repository.js';
-import { Reseter } from '../../domain/auth/entity.js';
+import type { ReseterRepository } from '../../domain/auth/repository.js';
+import type { Reseter } from '../../domain/auth/entity.js';
 
 export class PostgresReseterRepository implements ReseterRepository {
   constructor(private readonly prisma: PrismaClient | Prisma.TransactionClient) {}
 
-  async getById(userId: string): Promise<Reseter | null> {
+  async getByUserId(userId: string): Promise<Reseter | null> {
     const record = await this.prisma.reseter.findFirst({
       where: {
         userId,
@@ -23,13 +23,11 @@ export class PostgresReseterRepository implements ReseterRepository {
       where: { userId: reseter.userId },
       update: {
         tokenHash: reseter.tokenHash,
-        used: false,
         expireAt,
       },
       create: {
         userId: reseter.userId,
         tokenHash: reseter.tokenHash,
-        used: false,
         expireAt,
       },
     });

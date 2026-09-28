@@ -1,11 +1,11 @@
 import { PrismaClient } from '@prisma/client';
-import { getConfig } from '../../config/env.js';
+import { getConfig, Config } from '../../config/env.js';
 
 let prismaInstance: PrismaClient | null = null;
 
-export function getPrismaClient(): PrismaClient {
+export function getPrismaClient(configOverride?: Config): PrismaClient {
   if (!prismaInstance) {
-    const config = getConfig();
+    const config = configOverride || getConfig();
     prismaInstance = new PrismaClient({
       datasources: {
         db: {
@@ -18,4 +18,9 @@ export function getPrismaClient(): PrismaClient {
   return prismaInstance;
 }
 
-export const prisma = getPrismaClient();
+export async function disconnectPrisma(): Promise<void> {
+  if (prismaInstance) {
+    await prismaInstance.$disconnect();
+    prismaInstance = null;
+  }
+}

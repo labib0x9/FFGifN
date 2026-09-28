@@ -8,8 +8,8 @@ export interface EmailSender {
   sendShareNotification(email: string, token: string): Promise<void>;
 }
 
-export function verifyAccountBody(token: string): string {
-  const url = `http://127.0.0.1:8080/auth/verify?token=${token}`;
+export function verifyAccountBody(baseUrl: string, token: string): string {
+  const url = `${baseUrl.replace(/\/$/, '')}/auth/verify?token=${token}`;
   return `
     <h1>Welcome To FFgif</h1>
     <p>Click the link below to verify your account.</p>
@@ -20,8 +20,8 @@ export function verifyAccountBody(token: string): string {
   `;
 }
 
-export function sendPasswordResetBody(token: string): string {
-  const url = `http://127.0.0.1:8080/auth/reset?token=${token}`;
+export function sendPasswordResetBody(baseUrl: string, token: string): string {
+  const url = `${baseUrl.replace(/\/$/, '')}/auth/reset?token=${token}`;
   return `
     <h1>FFgif Password Reset</h1>
     <p>Click the link below to reset your password.</p>
@@ -32,8 +32,8 @@ export function sendPasswordResetBody(token: string): string {
   `;
 }
 
-export function sendShareBody(token: string): string {
-  const url = `http://127.0.0.1:8080/s/${token}`;
+export function sendShareBody(baseUrl: string, token: string): string {
+  const url = `${baseUrl.replace(/\/$/, '')}/s/${token}`;
   return `
     <h1>FFgif Gif Share</h1>
     <p>Click the link below to download the shared GIF.</p>
@@ -46,9 +46,11 @@ export function sendShareBody(token: string): string {
 export class SmtpMailer implements EmailSender {
   private readonly transporter: Transporter;
   private readonly from: string;
+  private readonly baseUrl: string;
 
-  constructor(configOverride?: Config['smtp']) {
-    const smtpConfig = configOverride || getConfig().smtp;
+  constructor(configOverride?: { smtp: Config['smtp']; appBaseUrl?: string }) {
+    const smtpConfig = configOverride?.smtp || getConfig().smtp;
+    this.baseUrl = configOverride?.appBaseUrl || getConfig().appBaseUrl;
     this.from = smtpConfig.user;
     this.transporter = nodemailer.createTransport({
       host: smtpConfig.host,
@@ -65,7 +67,7 @@ export class SmtpMailer implements EmailSender {
       from: this.from,
       to: email,
       subject: 'Verify your account',
-      html: verifyAccountBody(token),
+      html: verifyAccountBody(this.baseUrl, token),
     });
   }
 
@@ -74,7 +76,7 @@ export class SmtpMailer implements EmailSender {
       from: this.from,
       to: email,
       subject: 'Reset Password',
-      html: sendPasswordResetBody(token),
+      html: sendPasswordResetBody(this.baseUrl, token),
     });
   }
 
@@ -92,7 +94,7 @@ export class SmtpMailer implements EmailSender {
       from: this.from,
       to: email,
       subject: 'Share gif',
-      html: sendShareBody(token),
+      html: sendShareBody(this.baseUrl, token),
     });
   }
 }

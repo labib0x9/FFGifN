@@ -6,15 +6,15 @@ services:
     container_name: ffgif-postgres
     command: ["postgres", "-c", "shared_preload_libraries=pg_cron", "-c", "cron.database_name=${PG_NAME}"]
     environment:
-      - POSTGRES_USER=${PG_SUPERUSER}
-      - POSTGRES_DB=${PG_SUPERDB}
-      - POSTGRES_HOST_AUTH_METHOD=trust
+      - POSTGRES_USER=${PG_USER}
+      - POSTGRES_PASSWORD=${PG_PASSWORD}
+      - POSTGRES_DB=${PG_NAME}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${PG_SUPERUSER} -d ${PG_SUPERDB}"]
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER} -d ${PG_NAME}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -26,7 +26,7 @@ services:
     image: redis:7-alpine
     container_name: ffgif-redis
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redisdata:/data
     command: redis-server --appendonly yes
@@ -46,8 +46,8 @@ services:
       - RABBITMQ_DEFAULT_USER=${RMQ_USER}
       - RABBITMQ_DEFAULT_PASS=${RMQ_PASS}
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
     volumes:
       - rabbitmqdata:/var/lib/rabbitmq
     healthcheck:
@@ -81,8 +81,8 @@ services:
       - MINIO_TEMP_BUCKET=${MINIO_TEMP_BUCKET}
       - MINIO_API_CORS_ALLOW_ORIGIN=${MINIO_API_CORS_ALLOW_ORIGIN}
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     volumes:
       - miniodata:/data
     healthcheck:
@@ -109,9 +109,11 @@ services:
       - PORT=${PORT}
       - VERSION=${VERSION}
       - SERVICE_NAME=${SERVICE_NAME}
+      - APP_BASE_URL=${APP_BASE_URL}
       - BCRYPT_COST=${BCRYPT_COST}
       - HASH_PEPPER=${HASH_PEPPER}
       - JWT_SECRET=${JWT_SECRET}
+      - CORS_ORIGINS=${CORS_ORIGINS}
       - PG_USER=${PG_USER}
       - PG_PASSWORD=${PG_PASSWORD}
       - PG_PORT=${PG_PORT}
@@ -134,8 +136,6 @@ services:
       - MINIO_API_CORS_ALLOW_ORIGIN=${MINIO_API_CORS_ALLOW_ORIGIN}
       - MINIO_PUBLIC_ENDPOINT=127.0.0.1:9000
       - EMAIL=${EMAIL}
-      - MAILTRAP_USERNAME=${MAILTRAP_USERNAME}
-      - MAILTRAP_PASSWORD=${MAILTRAP_PASSWORD}
       - SMTP_HOST=${SMTP_HOST}
       - SMTP_PORT=${SMTP_PORT}
       - SMTP_USER=${SMTP_USER}
@@ -165,9 +165,11 @@ services:
       - PORT=${PORT}
       - VERSION=${VERSION}
       - SERVICE_NAME=${SERVICE_NAME}
+      - APP_BASE_URL=${APP_BASE_URL}
       - BCRYPT_COST=${BCRYPT_COST}
       - HASH_PEPPER=${HASH_PEPPER}
       - JWT_SECRET=${JWT_SECRET}
+      - CORS_ORIGINS=${CORS_ORIGINS}
       - PG_USER=${PG_USER}
       - PG_PASSWORD=${PG_PASSWORD}
       - PG_PORT=${PG_PORT}
@@ -190,8 +192,6 @@ services:
       - MINIO_API_CORS_ALLOW_ORIGIN=${MINIO_API_CORS_ALLOW_ORIGIN}
       - MINIO_PUBLIC_ENDPOINT=127.0.0.1:9000
       - EMAIL=${EMAIL}
-      - MAILTRAP_USERNAME=${MAILTRAP_USERNAME}
-      - MAILTRAP_PASSWORD=${MAILTRAP_PASSWORD}
       - SMTP_HOST=${SMTP_HOST}
       - SMTP_PORT=${SMTP_PORT}
       - SMTP_USER=${SMTP_USER}
@@ -221,4 +221,5 @@ volumes:
   rabbitmqdata:
   miniodata:
   apitmp:
+
 
