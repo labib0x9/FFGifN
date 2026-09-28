@@ -2,4 +2,8 @@ node_modules/
 dist/
 .env
 .markdown-collab/
-docs/what_i_learned.md
+docs/*
+.agents
+.claude
+.cursor
+.devin

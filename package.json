@@ -22,8 +22,13 @@
   },
   "license": "ISC",
   "devDependencies": {
+    "@types/amqplib": "^0.10.8",
+    "@types/bcrypt": "^6.0.0",
     "@types/node": "^26.6.3",
+    "@types/nodemailer": "^8.0.2",
+    "@types/uuid": "^10.0.0",
     "eslint": "^10.11.0",
+    "prisma": "^6.19.3",
     "tsx": "^4.23.15",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.70.1",
@@ -35,8 +40,14 @@
     "@fastify/jwt": "^10.2.2",
     "@fastify/multipart": "^10.1.2",
     "@fastify/static": "^10.1.5",
+    "@prisma/client": "^6.19.3",
+    "amqplib": "^2.2.0",
+    "bcrypt": "^6.0.0",
     "fastify": "^5.12.5",
     "fastify-plugin": "^6.0.0",
+    "ioredis": "^6.0.0",
+    "nodemailer": "^10.0.12",
+    "uuid": "^14.0.2",
     "zod": "^4.6.5"
   }
 }
